@@ -22,6 +22,19 @@ bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
 symbol = "BTCUSDT"
 interval = "1m"
 
+# 📊 Orderbook tahlil funksiyasi
+def get_orderbook_signal(symbol, depth=10):
+    order_book = client.get_order_book(symbol=symbol, limit=depth)
+    bids = sum([float(bid[1]) for bid in order_book['bids']])
+    asks = sum([float(ask[1]) for ask in order_book['asks']])
+    if bids > asks * 1.05:
+        return 1
+    elif asks > bids * 1.05:
+        return -1
+    else:
+        return 0
+
+# 📈 Candle + Technical Analysis
 def get_klines(symbol, interval="1m", limit=200):
     candles = client.get_klines(symbol=symbol, interval=interval, limit=limit)
     df = pd.DataFrame(candles, columns=[
@@ -39,24 +52,30 @@ def generate_features(df):
     df['signal'] = np.where(df['ema_20'] > df['ema_50'], 1, -1)
     return df
 
+# 🔔 Asosiy signal funksiyasi
 def run_signal():
     df = get_klines(symbol)
     df = generate_features(df)
-
     latest = df.iloc[-1]
-    signal = latest['signal']
-    rsi = latest['rsi']
 
-    if rsi < 30 and signal == 1:
-        msg = "🚀 BUY signal: BTC/USDT \nRSI: {:.2f}".format(rsi)
-    elif rsi > 70 and signal == -1:
-        msg = "🔻 SELL signal: BTC/USDT \nRSI: {:.2f}".format(rsi)
+    ta_signal = latest['signal']
+    rsi = latest['rsi']
+    ob_signal = get_orderbook_signal(symbol)
+
+    final_signal = 0
+    if ta_signal == 1 and ob_signal == 1 and rsi < 70:
+        final_signal = 1
+        msg = f"🚀 BUY signal: BTC/USDT\nRSI: {rsi:.2f}\nOrderbook: Buy > Sell"
+    elif ta_signal == -1 and ob_signal == -1 and rsi > 30:
+        final_signal = -1
+        msg = f"🔻 SELL signal: BTC/USDT\nRSI: {rsi:.2f}\nOrderbook: Sell > Buy"
     else:
-        msg = "⏸ No clear signal. RSI: {:.2f}".format(rsi)
+        msg = f"⏸ No clear signal\nRSI: {rsi:.2f}\nOrderbook Bids vs Asks: {ob_signal}"
 
     bot.send_message(chat_id=CHAT_ID, text=msg)
     print(msg)
 
+# 🔄 1 daqiqalik sikl
 if __name__ == "__main__":
     while True:
         try:
